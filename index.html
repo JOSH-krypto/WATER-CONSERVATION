@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Irrigation & Rainwater Optimizer</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f1f9ff; margin:0; padding:0; color:#333; }
+    header { background:#0284c7; color:white; padding:15px; text-align:center; }
+    nav button { margin:5px; padding:10px 20px; border:none; border-radius:6px; cursor:pointer; }
+    nav button.active { background:#0369a1; color:white; }
+    .container { max-width:800px; margin:20px auto; padding:20px; }
+    .card { background:white; border-radius:10px; padding:20px; margin-bottom:20px;
+            box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+    label { display:block; margin-top:10px; font-weight:bold; }
+    input, select { width:100%; padding:8px; margin-top:5px; border:1px solid #ccc; border-radius:6px; }
+    .result { margin-top:15px; padding:10px; background:#e0f2fe; border-left:4px solid #0284c7; border-radius:6px; }
+    footer { text-align:center; padding:10px; font-size:12px; background:#f0f0f0; margin-top:20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>💧 H2O </h1>
+    <nav>
+      <button id="btn-irrigation" class="active">Irrigation</button>
+      <button id="btn-rainwater">Rainwater</button>
+    </nav>
+    <button id="connectBtn" style="margin-top:10px; padding:10px;">🔌 Connect Arduino</button>
+  </header>
+
+  <div class="container">
+    <!-- Irrigation Tool -->
+    <div id="irrigation" class="card">
+      <h2>Smart Irrigation Advisor</h2>
+      <p>Live data from soil sensor + weather.</p>
+      
+      <label>Soil Moisture (%)</label>
+      <input type="number" id="soilMoisture" placeholder="Waiting for sensor..." readonly>
+
+      <label>Crop Type</label>
+      <select id="crop">
+        <option value="wheat">Wheat</option>
+        <option value="rice">Rice</option>
+        <option value="maize">Maize</option>
+        <option value="vegetables">Vegetables</option>
+      </select>
+
+      <label>Weather</label>
+      <select id="weather">
+        <option value="sunny">Sunny</option>
+        <option value="cloudy">Cloudy</option>
+        <option value="rainy">Rainy</option>
+      </select>
+
+      <button onclick="calculateIrrigation()" style="margin-top:15px;">Get Advice</button>
+      <div id="irrigationResult" class="result"></div>
+    </div>
+
+    <!-- Rainwater Tool -->
+    <div id="rainwater" class="card" style="display:none;">
+      <h2>Rainwater Harvesting Optimizer</h2>
+      <p>Estimate water collection.</p>
+      
+      <label>Roof Area (sq. meters)</label>
+      <input type="number" id="roofArea" placeholder="e.g. 120">
+
+      <label>Annual Rainfall (mm)</label>
+      <input type="number" id="rainfall" placeholder="Waiting for rain sensor..." readonly>
+
+      <button onclick="calculateRainwater()" style="margin-top:15px;">Calculate</button>
+      <div id="rainwaterResult" class="result"></div>
+    </div>
+  </div>
+
+  <footer>
+    WATER SUSTAINABILITY
+  </footer>
+
+  <script>
+    // Navigation
+    const btnIrrigation = document.getElementById("btn-irrigation");
+    const btnRainwater = document.getElementById("btn-rainwater");
+    const irrigation = document.getElementById("irrigation");
+    const rainwater = document.getElementById("rainwater");
+
+    btnIrrigation.onclick = () => {
+      irrigation.style.display = "block";
+      rainwater.style.display = "none";
+      btnIrrigation.classList.add("active");
+      btnRainwater.classList.remove("active");
+    };
+    btnRainwater.onclick = () => {
+      irrigation.style.display = "none";
+      rainwater.style.display = "block";
+      btnRainwater.classList.add("active");
+      btnIrrigation.classList.remove("active");
+    };
+
+    // --- Web Serial API to connect Arduino ---
+    let port, reader;
+    document.getElementById("connectBtn").addEventListener("click", async () => {
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        reader = port.readable.getReader();
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          let text = new TextDecoder().decode(value);
+          console.log("Arduino:", text);
+
+          // Expected data: "SOIL:45;RAIN:800"
+          if (text.includes("SOIL")) {
+            let parts = text.split(";");
+            parts.forEach(p => {
+              if (p.startsWith("SOIL")) {
+                document.getElementById("soilMoisture").value = p.split(":")[1];
+              }
+              if (p.startsWith("RAIN")) {
+                document.getElementById("rainfall").value = p.split(":")[1];
+              }
+            });
+          }
+        }
+      } catch (err) {
+        alert("Connection failed: " + err);
+      }
+    });
+
+    // Irrigation logic
+    function calculateIrrigation() {
+      let soil = parseFloat(document.getElementById("soilMoisture").value);
+      let crop = document.getElementById("crop").value;
+      let weather = document.getElementById("weather").value;
+      let resultBox = document.getElementById("irrigationResult");
+
+      if (isNaN(soil)) {
+        resultBox.innerHTML = "<p style='color:red;'>Waiting for sensor data...</p>";
+        return;
+      }
+
+      let advice = "Moderate irrigation needed.";
+      if (soil > 60) advice = "No irrigation needed.";
+      if (soil < 30) advice = "High irrigation required.";
+      if (weather === "rainy") advice = "No irrigation (rain forecast).";
+
+      let cropFactor = { wheat: 1.0, rice: 1.3, maize: 0.8, vegetables: 1.1 }[crop];
+      let waterLiters = (100 - soil) * cropFactor * 10;
+
+      resultBox.innerHTML = `
+        <p><b>Advice:</b> ${advice}</p>
+        <p><b>Estimated water needed:</b> ${waterLiters.toFixed(0)} liters per acre</p>
+      `;
+    }
+
+    // Rainwater logic
+    function calculateRainwater() {
+      let area = parseFloat(document.getElementById("roofArea").value);
+      let rain = parseFloat(document.getElementById("rainfall").value);
+      let resultBox = document.getElementById("rainwaterResult");
+
+      if (isNaN(area) || isNaN(rain)) {
+        resultBox.innerHTML = "<p style='color:red;'>Enter roof area & wait for rainfall sensor.</p>";
+        return;
+      }
+
+      let efficiency = 0.8; // 80% collection efficiency
+      let liters = area * rain * efficiency;
+      let cubicMeters = liters / 1000;
+
+      resultBox.innerHTML = `
+        <p><b>Potential water harvest:</b> ${liters.toLocaleString()} liters/year</p>
+        <p><b>In cubic meters:</b> ${cubicMeters.toFixed(2)} m³/year</p>
+      `;
+    }
+  </script>
+</body>
+</html>
